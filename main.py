@@ -10,7 +10,6 @@ app = FastAPI(
     version="3.0.0"
 )
 
-# Core Telemetry Database Layer
 HISTORICAL_SANDBOX = {
     "roman_republic_79ad": {
         "name": "The Roman Republic Collapse (79 AD)",
@@ -57,7 +56,6 @@ class TelemetryPayload(BaseModel):
     mortality_load_change: float
 
 def run_calculation(dunbar_trust, cognitive_autonomy, resource_depletion, mortality_change):
-    """Executes Chapter 11 Core Equation: E = U / (R * M)"""
     utility = (dunbar_trust + cognitive_autonomy) / 2
     drain = resource_depletion * (1 + mortality_change)
     if drain <= 0: return 0.0
@@ -73,7 +71,6 @@ def get_status_matrix(efficiency):
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    """Generates the interactive dashboard interface with the Sandbox Calculator."""
     html_content = """
     <!DOCTYPE html>
     <html lang="en">
@@ -174,9 +171,114 @@ def read_root():
                 document.getElementById(id).innerText = parseFloat(val).toFixed(2);
             }
 
+            function renderOutput(title, score, status, directive) {
+                const out = document.getElementById('output');
+                let badgeColor = "#eab308";
+                if(status.includes("🟥")) badgeColor = "#ef4444";
+                if(status.includes("🟩")) badgeColor = "#22c55e";
+
+                out.innerHTML = `
+                                  <h3>${title}</h3>
+                    <p><strong>Universal Ledger Efficiency Score:</strong> ${score}</p>
+                    <div class="status-badge" style="background:${badgeColor}">${status}</div>
+                    <p style="margin-top:15px; font-size:0.9rem; color:#94a3b8;"><strong>Operational Directive:</strong> ${directive}</p>
+                `;
+            }
+
             async function runAudit(eventId) {
                 const out = document.getElementById('output');
                 out.innerHTML = 'Executing core calculations...';
                 try {
                     const response = await fetch('/audit/' + eventId);
                     const data = await response.json();
+                    
+                    renderOutput(data.event_name, data.universal_ledger_efficiency_score, data.system_status, data.operational_directive);
+
+                    document.getElementById('trust').value = data.metrics_evaluated.dunbar_trust_index;
+                    document.getElementById('autonomy').value = data.metrics_evaluated.cognitive_autonomy_ratio;
+                    document.getElementById('depletion').value = data.metrics_evaluated.resource_depletion_rate;
+                    document.getElementById('mortality').value = data.metrics_evaluated.mortality_load_change;
+
+                    updateVal('trust_val', data.metrics_evaluated.dunbar_trust_index);
+                    updateVal('autonomy_val', data.metrics_evaluated.cognitive_autonomy_ratio);
+                    updateVal('depletion_val', data.metrics_evaluated.resource_depletion_rate);
+                    updateVal('mortality_val', data.metrics_evaluated.mortality_load_change);
+                } catch(e) {
+                    out.innerHTML = 'Error fetching engine data.';
+                }
+            }
+
+            async function calculateCustom() {
+                const trust = parseFloat(document.getElementById('trust').value);
+                const autonomy = parseFloat(document.getElementById('autonomy').value);
+                const depletion = parseFloat(document.getElementById('depletion').value);
+                const mortality = parseFloat(document.getElementById('mortality').value);
+
+                try {
+                    const response = await fetch('/audit/custom', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            dunbar_trust_index: trust,
+                            cognitive_autonomy_ratio: autonomy,
+                            resource_depletion_rate: depletion,
+                            mortality_load_change: mortality
+                        })
+                    });
+                    const data = await response.json();
+
+                    let directive = "Maintain active sandbox parameter constraints.";
+                    if (data.status.includes("🟥")) directive = "Trigger Algorithmic Quarantine & Economic Shunning (Chapter 11/12 Firewall).";
+                    if (data.status.includes("🟨")) directive = "Deploy Micro-Niche Allocation Adjustments to optimize systemic load metrics.";
+                    if (data.status.includes("🟩")) directive = "Approve code variant; export structural design patterns to open registry.";
+
+                    renderOutput("Custom Hypothesis Configuration", data.universal_ledger_efficiency_score, data.status, directive);
+                } catch(e) {
+                    document.getElementById('output').innerHTML = 'Calculation failure inside cloud engine routing.';
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+@app.get("/audit/{event_id}")
+def audit_historical_event(event_id: str):
+    event = HISTORICAL_SANDBOX.get(event_id.lower())
+    if not event:
+        raise HTTPException(status_code=404, detail="Historical event profile not found in sandbox registries.")
+    
+    efficiency = run_calculation(
+        event["dunbar_trust_index"],
+        event["cognitive_autonomy_ratio"],
+        event["resource_depletion_rate"],
+        event["mortality_load_change"]
+    )
+    
+    classification, action, _ = get_status_matrix(efficiency)
+
+    return {
+        "event_name": event["name"],
+        "metrics_evaluated": event,
+        "universal_ledger_efficiency_score": efficiency,
+        "system_status": classification,
+        "operational_directive": action
+    }
+
+@app.post("/audit/custom")
+def audit_custom_data(payload: TelemetryPayload):
+    efficiency = run_calculation(
+        payload.dunbar_trust_index,
+        payload.cognitive_autonomy_ratio,
+        payload.resource_depletion_rate,
+        payload.mortality_load_change
+    )
+    classification, _, _ = get_status_matrix(efficiency)
+    return {
+        "universal_ledger_efficiency_score": efficiency,
+        "status": classification
+    }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)
